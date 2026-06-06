@@ -839,7 +839,7 @@ function setupScrollAnimations() {
 
 // ── AUTH ───────────────────────────────────────────────
 async function checkAuthState() {
-  // 1. Try localStorage first (works even without DB)
+  // Restore from localStorage — no Supabase email auth needed for customers
   try {
     const saved = localStorage.getItem('st_user');
     if (saved) {
@@ -848,25 +848,11 @@ async function checkAuthState() {
         state.user = user;
         updateNavForUser(user);
         loadMyBookings();
-        return; // done — user restored from localStorage
       }
     }
-  } catch(e) { localStorage.removeItem('st_user'); }
-
-  // 2. Fallback: check Supabase session (for real auth users)
-  try {
-    const sb = getSupabase();
-    const { data: { session } } = await sb.auth.getSession();
-    if (session) {
-      const { data: profile } = await sb.from('profiles').select('*').eq('id', session.user.id).single();
-      if (profile) {
-        state.user = profile;
-        localStorage.setItem('st_user', JSON.stringify(profile));
-        updateNavForUser(profile);
-        loadMyBookings();
-      }
-    }
-  } catch(e) { /* DB unavailable */ }
+  } catch(e) {
+    localStorage.removeItem('st_user');
+  }
 }
 
 function updateNavForUser(profile) {
@@ -924,7 +910,7 @@ async function sendLoginOTP() {
   // Switch to OTP screen immediately
   document.getElementById('auth-step-phone').style.display = 'none';
   document.getElementById('auth-step-otp').style.display = 'block';
-  startResendTimer();
+  startResendTimer(60);
 
   // Send OTP via server API — WhatsApp only, never shown on screen
   sendOTP(cleaned, otp).then(sent => {
@@ -946,52 +932,38 @@ async function verifyLoginOTP() {
   const inputOtp = Array.from(boxes).map(b => b.value.trim()).join('');
   if (inputOtp.length !== 6) { showToast('Enter all 6 digits', 'error'); return; }
 
-  // Verify against in-memory OTP (no DB needed)
+  // Verify against in-memory OTP only — NO Supabase auth calls
   const isValid = verifyOTP(state.authPhone, inputOtp);
-  if (!isValid) { showToast('Invalid or expired OTP. Try resending.', 'error'); return; }
+  if (!isValid) { showToast('Incorrect OTP. Try again or resend.', 'error'); return; }
 
-  // Build a local user profile (no Supabase auth needed for customer login)
-  // Try to persist to DB in background — if it fails, still log in
+  // Build user profile — stored in localStorage, no Supabase email auth needed
   const userProfile = {
-    id: 'local_' + state.authPhone,
+    id: 'st_' + state.authPhone,
     full_name: state.authName || 'Traveller',
     phone: state.authPhone,
     role: 'customer'
   };
   state.user = userProfile;
 
-  // Try saving to Supabase in background (non-blocking)
+  // Save to localStorage — survives page refresh, no Supabase email rate limits
+  localStorage.setItem('st_user', JSON.stringify(userProfile));
+
+  // Save profile to Supabase profiles table only (no auth, just data)
   try {
     const sb = getSupabase();
-    const email = `${state.authPhone}@sowmiyatravels.local`;
-    const password = `ST_${state.authPhone}_2024`;
-    sb.auth.signInWithPassword({ email, password }).then(({ data, error }) => {
-      if (!error && data?.user) {
-        sb.from('profiles').upsert({
-          id: data.user.id, full_name: state.authName || 'Customer',
-          phone: state.authPhone, role: 'customer'
-        }).catch(() => {});
-        state.user = { ...userProfile, id: data.user.id };
-      } else {
-        sb.auth.signUp({ email, password }).then(({ data: d2 }) => {
-          if (d2?.user) {
-            sb.from('profiles').upsert({
-              id: d2.user.id, full_name: state.authName || 'Customer',
-              phone: state.authPhone, role: 'customer'
-            }).catch(() => {});
-            state.user = { ...userProfile, id: d2.user.id };
-          }
-        }).catch(() => {});
-      }
-    }).catch(() => {});
-  } catch(e) { /* DB unavailable — local login still works */ }
+    await sb.from('profiles').upsert({
+      id: state.authPhone, // use phone as ID since no auth
+      full_name: state.authName || 'Traveller',
+      phone: state.authPhone,
+      role: 'customer'
+    }, { onConflict: 'phone' }).catch(() => {});
+  } catch(e) { /* ignore — localStorage login already works */ }
+
+  clearInterval(state.resendTimer);
 
   document.getElementById('auth-step-otp').style.display = 'none';
   document.getElementById('auth-step-success').style.display = 'block';
   document.getElementById('success-msg').textContent = `Welcome, ${state.authName || 'Traveller'}! 🚗`;
-
-  // Persist login to survive page refresh
-  localStorage.setItem('st_user', JSON.stringify(state.user));
 
   updateNavForUser(state.user);
   loadMyBookings();
