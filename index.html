@@ -646,9 +646,12 @@ async function sendOTP(phone, otp) {
 // ── VERIFY OTP — purely in-memory ───────────────────────────
 // state.currentOTP is set when OTP is generated; cleared after verify.
 function verifyOTP(phone, inputOtp) {
-  if (!state.currentOTP) return false;
-  if (inputOtp !== state.currentOTP) return false;
-  if (Date.now() > state.otpExpiry) return false; // 10 min expiry
+  const input = (inputOtp || '').toString().trim();
+  const stored = (state.currentOTP || '').toString().trim();
+  console.log('OTP verify — input:', input, 'stored:', stored, 'expiry:', new Date(state.otpExpiry).toLocaleTimeString());
+  if (!stored) { console.warn('No OTP in state'); return false; }
+  if (input !== stored) { console.warn('OTP mismatch'); return false; }
+  if (Date.now() > state.otpExpiry) { console.warn('OTP expired'); return false; }
   state.currentOTP = null;
   state.otpExpiry = 0;
   return true;
@@ -940,8 +943,8 @@ async function sendLoginOTP() {
 
 async function verifyLoginOTP() {
   const boxes = document.querySelectorAll('.otp-box');
-  const inputOtp = Array.from(boxes).map(b => b.value).join('');
-  if (inputOtp.length !== 6) { showToast('Enter complete 6-digit OTP', 'error'); return; }
+  const inputOtp = Array.from(boxes).map(b => b.value.trim()).join('');
+  if (inputOtp.length !== 6) { showToast('Enter all 6 digits', 'error'); return; }
 
   // Verify against in-memory OTP (no DB needed)
   const isValid = verifyOTP(state.authPhone, inputOtp);
@@ -1025,10 +1028,11 @@ function setupOTPBoxes() {
   });
 }
 
-function startResendTimer() {
-  let secs = 60;
+function startResendTimer(seconds = 60) {
+  let secs = seconds;
   const btn = document.getElementById('resend-btn');
   btn.disabled = true;
+  btn.textContent = `Resend OTP (${secs}s)`;
   clearInterval(state.resendTimer);
   state.resendTimer = setInterval(() => {
     secs--;
@@ -1036,25 +1040,26 @@ function startResendTimer() {
     if (secs <= 0) {
       clearInterval(state.resendTimer);
       btn.disabled = false;
-      btn.textContent = 'Resend OTP';
+      btn.textContent = '🔄 Resend OTP';
     }
   }, 1000);
 }
 
 async function resendOTP() {
-  if (isOTPCoolingDown(state.authPhone)) {
-    const rem = getOTPCooldownRemaining(state.authPhone);
-    showToast(`Wait ${rem}s before requesting new OTP`, 'warning'); return;
-  }
+  // Generate fresh OTP and update state FIRST before sending
   const otp = generateOTP();
   state.currentOTP = otp;
+  state.otpExpiry = Date.now() + 10 * 60 * 1000; // reset 10 min expiry
+  markOTPSent(state.authPhone);
+
   showToast('Resending OTP…', 'info');
+  startResendTimer(60);
+
   sendOTP(state.authPhone, otp).then(sent => {
-    showToast(sent ? 'OTP resent! Check WhatsApp' : 'Sending — check WhatsApp shortly', sent ? 'success' : 'info');
+    showToast(sent ? 'OTP resent! Check WhatsApp' : 'Check WhatsApp shortly', sent ? 'success' : 'info');
   }).catch(() => {
     showToast('Check WhatsApp for OTP', 'info');
   });
-  startResendTimer();
 }
 
 // ── LOAD DATA ──────────────────────────────────────────
