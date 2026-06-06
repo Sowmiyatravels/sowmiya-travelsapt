@@ -1,6 +1,6 @@
 -- ============================================================
 -- SOWMIYA TRAVELS - SUPABASE DATABASE SCHEMA
--- Project: lbvtibzcltkdqqofoqcx
+-- Project: lhylfcxjwenvwfggptnh
 -- ============================================================
 
 -- Enable UUID extension
