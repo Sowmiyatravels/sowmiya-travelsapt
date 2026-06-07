@@ -391,7 +391,7 @@ footer{background:var(--navy);color:rgba(255,255,255,.6);padding:50px 20px 30px}
         <!-- FARE SELECTOR -->
         <div class="form-group" style="margin-bottom:16px">
           <label class="form-label">💰 SELECT FARE TYPE</label>
-          <select id="fare-select" class="form-select" onchange="updateFarePreview()">
+          <select id="fare-select" class="form-select" required onchange="updateFarePreview()" style="border:2px solid rgba(220,53,69,.6)">
             <option value="">Choose fare type…</option>
           </select>
         </div>
@@ -1319,6 +1319,9 @@ function updateFarePreview() {
   const ruleId = document.getElementById('fare-select').value;
   const rule = state.fareRules.find(r => r.id === ruleId);
   state.selectedFareRule = rule;
+  // Visual mandatory feedback
+  const sel = document.getElementById('fare-select');
+  sel.style.border = rule ? '2px solid rgba(40,167,69,.6)' : '2px solid rgba(220,53,69,.6)';
 
   const preview = document.getElementById('fare-preview');
   const rows = document.getElementById('fare-rows');
