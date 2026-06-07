@@ -10,7 +10,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- PROFILES TABLE (linked to Supabase Auth)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS profiles (
-  id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   full_name TEXT NOT NULL,
   phone TEXT UNIQUE NOT NULL,
   email TEXT,
@@ -248,6 +248,9 @@ CREATE TRIGGER trg_owners_updated BEFORE UPDATE ON car_owners FOR EACH ROW EXECU
 -- All tables use public access (anon key is safe for this app)
 -- To re-enable RLS later, use the Supabase dashboard
 -- ============================================================
+-- Ensure phone uniqueness for OTP-based customer lookup
+CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_phone ON profiles(phone);
+
 ALTER TABLE profiles        DISABLE ROW LEVEL SECURITY;
 ALTER TABLE bookings        DISABLE ROW LEVEL SECURITY;
 ALTER TABLE vehicles        DISABLE ROW LEVEL SECURITY;
