@@ -37,9 +37,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--off);color:var(--text);mi
 
 /* ── MAIN ────────────────────────────────────────────── */
 #main{margin-left:240px;flex:1;min-height:100vh;display:flex;flex-direction:column}
+#menu-toggle{display:none}
 .top-bar{background:var(--white);padding:0 28px;height:64px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e8eaf0;position:sticky;top:0;z-index:50}
 .top-title{font-family:'Playfair Display',serif;font-size:1.25rem;color:var(--navy)}
 .top-actions{display:flex;align-items:center;gap:12px}
+.page-content{padding:24px 28px}
 .content{padding:28px;flex:1}
 
 /* ── CARDS ───────────────────────────────────────────── */
@@ -131,12 +133,39 @@ label.field-label{display:block;font-size:.78rem;font-weight:600;color:var(--mut
 @keyframes slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
 
 /* ── RESPONSIVE ──────────────────────────────────────── */
+/* ── MOBILE OVERLAY BACKDROP ─────────────────────────── */
+#sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;backdrop-filter:blur(2px)}
+#sidebar-backdrop.show{display:block}
+
+/* ── BOTTOM NAV (mobile quick access) ───────────────── */
+#bottom-nav{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--sidebar);border-top:1px solid rgba(255,255,255,.1);z-index:98;padding:6px 0 env(safe-area-inset-bottom,6px)}
+.bottom-nav-inner{display:flex;justify-content:space-around;align-items:center}
+.bnav-item{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 10px;border:none;background:none;color:rgba(255,255,255,.5);cursor:pointer;font-family:'DM Sans',sans-serif;font-size:.6rem;font-weight:600;border-radius:10px;min-width:52px;transition:all .2s;position:relative}
+.bnav-item.active,.bnav-item:active{color:var(--gold)}
+.bnav-item .bnav-icon{font-size:1.3rem;line-height:1}
+.bnav-badge{position:absolute;top:2px;right:6px;background:#ef4444;color:#fff;font-size:.55rem;font-weight:700;border-radius:10px;padding:1px 5px;min-width:14px;text-align:center}
+
 @media(max-width:768px){
-  #sidebar{transform:translateX(-100%)}
+  #menu-toggle{display:block}
+  #sidebar{transform:translateX(-100%);z-index:100}
   #sidebar.open{transform:translateX(0)}
-  #main{margin-left:0}
+  #main{margin-left:0;padding-bottom:70px}
   .form-grid,.form-grid.cols3{grid-template-columns:1fr}
   .stats-grid{grid-template-columns:1fr 1fr}
+  #bottom-nav{display:block}
+  .top-bar{padding:0 16px;height:56px}
+  .top-actions .btn{display:none}
+  .top-actions #top-datetime{display:none}
+  /* make tables scroll horizontally on mobile */
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px}
+  table{min-width:600px}
+  /* cards on mobile */
+  .stat-card{padding:16px}
+  .page-content{padding:16px}
+}
+@media(min-width:769px){
+  #sidebar-backdrop{display:none!important}
+  #bottom-nav{display:none!important}
 }
 
 /* ── LOGIN OVERLAY ───────────────────────────────────── */
@@ -207,11 +236,24 @@ label.field-label{display:block;font-size:.78rem;font-weight:600;color:var(--mut
   </div>
 </aside>
 
+<!-- SIDEBAR BACKDROP -->
+<div id="sidebar-backdrop" onclick="closeSidebar()"></div>
+
+<!-- BOTTOM NAV -->
+<nav id="bottom-nav">
+  <div class="bottom-nav-inner">
+    <button class="bnav-item" onclick="mobileNav('dashboard',this)"><span class="bnav-icon">📊</span>Dashboard</button>
+    <button class="bnav-item active" onclick="mobileNav('bookings',this)"><span class="bnav-icon">📋</span>Bookings<span class="bnav-badge" id="bnav-badge-bookings" style="display:none">0</span></button>
+    <button class="bnav-item" onclick="mobileNav('payments',this)"><span class="bnav-icon">💳</span>Payments<span class="bnav-badge" id="bnav-badge-payments" style="display:none">0</span></button>
+    <button class="bnav-item" onclick="toggleSidebar()"><span class="bnav-icon">☰</span>More</button>
+  </div>
+</nav>
+
 <!-- MAIN CONTENT -->
 <div id="main">
   <header class="top-bar">
     <div style="display:flex;align-items:center;gap:12px">
-      <button style="background:none;border:none;font-size:1.3rem;cursor:pointer;display:none" id="menu-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+      <button style="background:none;border:none;font-size:1.5rem;cursor:pointer;padding:6px;border-radius:8px;line-height:1" id="menu-toggle" onclick="toggleSidebar()" title="Menu">☰</button>
       <h1 class="top-title" id="page-title">Dashboard</h1>
     </div>
     <div class="top-actions">
@@ -1862,6 +1904,35 @@ function viewCustomerBookings(customerId) {
 }
 
 // ── PAGE NAVIGATION ────────────────────────────────────
+// ── SIDEBAR MOBILE HELPERS ────────────────────────────────
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  const bd = document.getElementById('sidebar-backdrop');
+  const isOpen = sb.classList.contains('open');
+  if (isOpen) {
+    sb.classList.remove('open');
+    bd.classList.remove('show');
+  } else {
+    sb.classList.add('open');
+    bd.classList.add('show');
+  }
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-backdrop').classList.remove('show');
+}
+// Bottom nav tap — navigate and close sidebar
+function mobileNav(page, el) {
+  document.querySelectorAll('.bnav-item').forEach(b => b.classList.remove('active'));
+  if (el) el.classList.add('active');
+  // find matching sidebar nav-item and pass it
+  const sideNavItems = document.querySelectorAll('.nav-item');
+  let match = null;
+  sideNavItems.forEach(n => { if (n.getAttribute('onclick')?.includes("'" + page + "'")) match = n; });
+  showPage(page, match);
+  closeSidebar();
+}
+
 function showPage(page, navEl) {
   // Hide all pages
   document.querySelectorAll('[id^="page-"]').forEach(p => p.style.display = 'none');
@@ -1879,6 +1950,17 @@ function showPage(page, navEl) {
   if (page === 'payments') loadPaymentVerifications();
   document.getElementById('page-title').textContent = titles[page] || page;
   A.currentPage = page;
+
+  // Sync bottom nav active state
+  const bnavMap = { dashboard: 0, bookings: 1, payments: 2 };
+  document.querySelectorAll('.bnav-item').forEach((b, i) => b.classList.remove('active'));
+  if (page in bnavMap) {
+    const bnavItems = document.querySelectorAll('.bnav-item');
+    if (bnavItems[bnavMap[page]]) bnavItems[bnavMap[page]].classList.add('active');
+  }
+
+  // Close sidebar on mobile after navigation
+  if (window.innerWidth <= 768) closeSidebar();
 }
 
 // ── PAYMENT VERIFICATIONS ─────────────────────────────────
@@ -1898,6 +1980,9 @@ async function loadPaymentVerifications() {
     const pendingCount = allPayVerifications.filter(v => v.status === 'pending_review').length;
     const badge = document.getElementById('badge-payments');
     if (badge) { badge.textContent = pendingCount; badge.style.display = pendingCount ? 'inline' : 'none'; }
+    // Sync to bottom nav badge
+    const bnavBadge = document.getElementById('bnav-badge-payments');
+    if (bnavBadge) { bnavBadge.textContent = pendingCount; bnavBadge.style.display = pendingCount ? 'flex' : 'none'; }
     renderPayVerifications(currentPayFilter);
   } catch(e) {
     document.getElementById('payment-verify-list').innerHTML =
