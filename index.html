@@ -684,37 +684,66 @@ async function sendTelegram(message) {
 }
 
 async function notifyNewBooking(booking) {
-  const msg = `🚗 <b>NEW BOOKING</b> — Sowmiya Travels
-
-📋 <b>#${booking.booking_number}</b>
-👤 ${booking.customer_name} | 📞 ${booking.customer_phone}
-🛣 ${(booking.trip_type||'').replace('_',' ').toUpperCase()}
-📍 From: ${booking.pickup_location}
-📍 To: ${booking.drop_location || 'N/A'}
-📅 ${booking.pickup_date} at ${booking.pickup_time}
-💰 ₹${booking.total_amount || 'TBD'}
-📝 ${booking.special_requests || 'None'}
-⏰ ${new Date().toLocaleString('en-IN')}`;
-  return sendTelegram(msg);
+  const tripLabel = (booking.trip_type||'').replace(/_/g,' ').toUpperCase();
+  const fareType = (booking.fare_type||'').replace(/_/g,' ');
+  const fareRate = booking.fare_type==='per_km' ? '/km' : booking.fare_type==='per_hour' ? '/hr' : booking.fare_type==='per_day' ? '/day' : '';
+  const fareInfo = booking.fare_type ? (fareType + ' — ₹' + (booking.base_amount||'') + fareRate) : 'N/A';
+  const lines = [
+    '🚗 <b>NEW BOOKING — Sowmiya Travels</b>',
+    '',
+    '📋 <b>Booking #' + booking.booking_number + '</b>',
+    '━━━━━━━━━━━━━━━━━━━━',
+    '👤 <b>Customer:</b> ' + booking.customer_name,
+    '📞 <b>Phone:</b> ' + booking.customer_phone,
+    '🛣 <b>Trip Type:</b> ' + tripLabel,
+    '━━━━━━━━━━━━━━━━━━━━',
+    '📍 <b>Pickup:</b> ' + booking.pickup_location,
+    '📍 <b>Drop:</b> ' + (booking.drop_location || 'N/A'),
+    '📅 <b>Date:</b> ' + booking.pickup_date + ' at ' + booking.pickup_time,
+    booking.return_date ? ('🔄 Return: ' + booking.return_date + ' at ' + (booking.return_time||'')) : null,
+    booking.estimated_km ? ('📏 Distance: ' + booking.estimated_km + ' km') : null,
+    '━━━━━━━━━━━━━━━━━━━━',
+    '🚘 <b>Vehicle:</b> ' + (booking.vehicle_name || 'Not selected'),
+    '💺 <b>Fare:</b> ' + fareInfo,
+    '💰 <b>Total:</b> ₹' + (booking.total_amount ? Number(booking.total_amount).toLocaleString('en-IN') : 'TBD'),
+    '━━━━━━━━━━━━━━━━━━━━',
+    '📝 <b>Special:</b> ' + (booking.special_requests || 'None'),
+    '⏰ ' + new Date().toLocaleString('en-IN')
+  ];
+  return sendTelegram(lines.filter(Boolean).join('\n'));
 }
 
 async function notifyBookingStatus(booking, newStatus) {
   const emoji = { confirmed:'✅', assigned:'🚗', started:'▶️', completed:'🏁', cancelled:'❌' };
-  return sendTelegram(`${emoji[newStatus]||'📢'} <b>UPDATE:</b> #${booking.booking_number} → ${newStatus.toUpperCase()}\n👤 ${booking.customer_name} | ${booking.customer_phone}`);
+  const payInfo = booking.payment_method ? ('\n💳 Payment: ' + booking.payment_method.toUpperCase()) : '';
+  const amtInfo = booking.total_amount ? ('\n💰 Total: ₹' + Number(booking.total_amount).toLocaleString('en-IN')) : '';
+  const msg = (emoji[newStatus]||'📢') + ' <b>BOOKING ' + newStatus.toUpperCase() + '</b> — #' + booking.booking_number +
+    '\n👤 ' + booking.customer_name + ' | 📞 ' + booking.customer_phone +
+    '\n📍 ' + (booking.pickup_location||'') + ' → ' + (booking.drop_location||'N/A') +
+    '\n📅 ' + (booking.pickup_date||'') + ' at ' + (booking.pickup_time||'') +
+    amtInfo + payInfo;
+  return sendTelegram(msg);
 }
 
 async function sendWhatsAppConfirmation(booking) {
-  const msg = `🚗 *Sowmiya Travels – Booking Confirmed!*
-
-📋 Booking No: *${booking.booking_number}*
-👤 ${booking.customer_name}
-📅 ${booking.pickup_date} at ${booking.pickup_time}
-📍 From: ${booking.pickup_location}
-📍 To: ${booking.drop_location || 'N/A'}
-💰 ₹${booking.total_amount ? Number(booking.total_amount).toLocaleString('en-IN') : 'TBD'}
-
-📞 Queries: 9786033425
-_Your Journey, Our Joy!_ 🌟`;
+  const parts = [
+    '🚗 *Sowmiya Travels – Booking Confirmed!*',
+    '',
+    '📋 Booking No: *' + booking.booking_number + '*',
+    '👤 Name: ' + booking.customer_name,
+    '📞 Phone: ' + booking.customer_phone,
+    '📅 Date: ' + booking.pickup_date + ' at ' + booking.pickup_time
+  ];
+  if (booking.return_date) parts.push('🔄 Return: ' + booking.return_date + ' at ' + (booking.return_time||''));
+  parts.push('📍 From: ' + booking.pickup_location);
+  parts.push('📍 To: ' + (booking.drop_location || 'N/A'));
+  if (booking.estimated_km) parts.push('📏 Distance: ' + booking.estimated_km + ' km');
+  if (booking.vehicle_name) parts.push('🚘 Vehicle: ' + booking.vehicle_name);
+  parts.push('💰 Total: ₹' + (booking.total_amount ? Number(booking.total_amount).toLocaleString('en-IN') : 'TBD'));
+  if (booking.payment_method) parts.push('💳 Payment: ' + booking.payment_method.toUpperCase());
+  parts.push('📊 Status: CONFIRMED');
+  parts.push('', '📞 For queries call: 9786033425', 'Thank you for choosing Sowmiya Travels! 🌟');
+  const msg = parts.join('\n');
   try {
     await fetch('/api/send-whatsapp', {
       method: 'POST',
@@ -1330,28 +1359,32 @@ function updateFarePreview() {
     setTimeout(() => autoDetectDistance(), 100);
   }
 
-  rows.innerHTML = `
-    <div class="fare-row"><span>${ruleNames[rule.rule_type] || rule.rule_type}</span><span>₹${rule.amount}${isPerKm ? '/km' : isPerHour ? '/hr' : isPerDay ? '/day' : ''}</span></div>
-    ${rule.description ? `<div class="fare-row"><span>Note</span><span>${rule.description}</span></div>` : ''}
-    ${qtyLabel ? `
-    <div class="fare-row" style="margin-top:8px;flex-direction:column;gap:6px;align-items:stretch">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="color:rgba(255,255,255,.7);font-size:.82rem">${qtyLabel}</span>
-        ${isPerKm ? `<button onclick="autoDetectDistance()" id="auto-dist-btn"
-          style="padding:4px 10px;border-radius:8px;border:1px solid rgba(212,160,23,.5);background:rgba(212,160,23,.15);color:var(--gold);font-size:.78rem;cursor:pointer">
-          📍 Re-detect
-        </button>` : ''}
-      </div>
-      <input id="fare-qty-input" type="number" min="1" step="0.5"
-        value="${qty || ''}" placeholder="${isPerKm && !hasCoords ? '⚠️ Select locations above first' : '0'}"
-        style="flex:1;padding:6px 10px;border-radius:8px;border:1px solid rgba(212,160,23,.4);background:rgba(255,255,255,.08);color:#fff;font-size:.95rem;text-align:right"
-        oninput="updateFarePreview()">
-      ${isPerKm && !hasCoords ? `<span style="color:rgba(255,165,0,.7);font-size:.75rem">⚠️ Select pickup & drop from suggestions to auto-detect distance</span>` : ''}
-    </div>
-    ${state.tripType === 'round_trip' && qty > 0 && (isPerKm || isPerHour) ? '<div class="fare-row"><span>Round Trip (×2)</span><span>×2</span></div>' : ''}
-    ` : ''}
-    <div class="fare-row total"><span>💰 Total Amount</span><span style="font-size:1.15rem;color:var(--gold)">₹${total.toLocaleString('en-IN')}</span></div>
-  `;
+  // Build HTML with string concat to avoid nested template literal parse errors
+  const rateLabel = isPerKm ? '/km' : isPerHour ? '/hr' : isPerDay ? '/day' : '';
+  let html = '';
+  html += '<div class="fare-row"><span>' + (ruleNames[rule.rule_type] || rule.rule_type) + '</span><span>\u20B9' + rule.amount + rateLabel + '</span></div>';
+  if (rule.description) {
+    html += '<div class="fare-row"><span>Note</span><span>' + rule.description + '</span></div>';
+  }
+  if (qtyLabel) {
+    html += '<div class="fare-row" style="margin-top:8px;flex-direction:column;gap:6px;align-items:stretch">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+    html += '<span style="color:rgba(255,255,255,.7);font-size:.82rem">' + qtyLabel + '</span>';
+    if (isPerKm) {
+      html += '<button onclick="autoDetectDistance()" id="auto-dist-btn" style="padding:4px 10px;border-radius:8px;border:1px solid rgba(212,160,23,.5);background:rgba(212,160,23,.15);color:var(--gold);font-size:.78rem;cursor:pointer">&#128205; Re-detect</button>';
+    }
+    html += '</div>';
+    html += '<input id="fare-qty-input" type="number" min="1" step="0.5" value="' + (qty || '') + '" placeholder="' + (isPerKm && !hasCoords ? 'Select locations above first' : '0') + '" style="flex:1;padding:6px 10px;border-radius:8px;border:1px solid rgba(212,160,23,.4);background:rgba(255,255,255,.08);color:#fff;font-size:.95rem;text-align:right" oninput="updateFarePreview()">';
+    if (isPerKm && !hasCoords) {
+      html += '<span style="color:rgba(255,165,0,.7);font-size:.75rem">Select pickup &amp; drop from suggestions to auto-detect distance</span>';
+    }
+    html += '</div>';
+    if (state.tripType === 'round_trip' && qty > 0 && (isPerKm || isPerHour)) {
+      html += '<div class="fare-row"><span>Round Trip (&times;2)</span><span>&times;2</span></div>';
+    }
+  }
+  html += '<div class="fare-row total"><span>&#128176; Total Amount</span><span style="font-size:1.15rem;color:var(--gold)">\u20B9' + total.toLocaleString('en-IN') + '</span></div>';
+  rows.innerHTML = html;
   preview.style.display = 'block';
 
   const newInput = document.getElementById('fare-qty-input');
@@ -1439,6 +1472,11 @@ async function confirmBooking() {
   if (!time) { showToast('Select pickup time', 'error'); return; }
   if (!name) { showToast('Enter your name', 'error'); return; }
   if (!phone || phone.length < 10) { showToast('Enter valid WhatsApp number', 'error'); return; }
+  if (!state.selectedFareRule) { showToast('Please select a fare type before booking', 'error'); document.getElementById('fare-select')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+  const qtyInputCheck = document.getElementById('fare-qty-input');
+  const qtyCheck = qtyInputCheck ? parseFloat(qtyInputCheck.value) || 0 : 0;
+  const needsQty = state.selectedFareRule && ['per_km','extra_km','per_hour','per_day'].includes(state.selectedFareRule.rule_type);
+  if (needsQty && qtyCheck <= 0) { showToast('Please enter distance / hours / days for fare calculation', 'error'); qtyInputCheck?.focus(); return; }
 
   const btn = document.getElementById('btn-confirm-booking');
   state.bookingInProgress = true;
@@ -1493,23 +1531,16 @@ async function confirmBooking() {
   btn.classList.remove('loading'); btn.textContent = '📞 Confirm Booking';
 
   if (error) { showToast('Booking failed: ' + error.message, 'error'); console.error(error); return; }
+  // Attach vehicle_name locally for notifications (not stored in DB — column doesn't exist)
+  data.vehicle_name = state.selectedVehicle?.name || state.selectedVehicle?.model || null;
 
   state.pendingBooking = data;
 
-  // Notify Telegram
+  // Notify Telegram immediately (admin alert)
   await notifyNewBooking(data);
 
-  // Show payment modal if amount set
-  if (data.total_amount) {
-    openPayModal(data);
-  } else {
-    // Send WhatsApp confirmation
-    await sendWhatsAppConfirmation(data);
-    showToast(`✅ Booking #${data.booking_number} created!`, 'success');
-    loadMyBookings();
-    document.getElementById('my-bookings').style.display = 'block';
-    document.getElementById('my-bookings').scrollIntoView({ behavior: 'smooth' });
-  }
+  // Show payment modal — WhatsApp sent after payment confirmed
+  openPayModal(data);
 }
 
 // ── PAYMENT MODAL ──────────────────────────────────────
@@ -1550,19 +1581,29 @@ async function confirmPayment() {
   const booking = state.pendingBooking;
   if (!booking) { closePayModal(); return; }
 
+  const payMethod = state.paymentMethod || 'cash';
+
   await sb.from('bookings').update({
-    payment_method: state.paymentMethod || 'cash',
-    payment_status: state.paymentMethod === 'cash' ? 'pending' : 'pending',
+    payment_method: payMethod,
+    payment_status: 'pending',
     booking_status: 'confirmed'
   }).eq('id', booking.id);
 
+  // Attach payment method and vehicle_name for notifications
+  booking.payment_method = payMethod;
+  booking.vehicle_name = state.selectedVehicle?.name || state.selectedVehicle?.model || null;
+
+  // Send WhatsApp to customer with full booking + payment info
   await sendWhatsAppConfirmation(booking);
+
+  // Notify Telegram with payment method
   await notifyBookingStatus(booking, 'confirmed');
 
   closePayModal();
-  showToast(`🎉 Booking #${booking.booking_number} confirmed!`, 'success');
+  showToast('🎉 Booking #' + booking.booking_number + ' confirmed! WhatsApp sent to ' + booking.customer_phone, 'success');
   loadMyBookings();
   document.getElementById('my-bookings').style.display = 'block';
+  document.getElementById('my-bookings').scrollIntoView({ behavior: 'smooth' });
 }
 
 // ── MY BOOKINGS ────────────────────────────────────────
