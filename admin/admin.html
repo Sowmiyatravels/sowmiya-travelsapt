@@ -197,6 +197,7 @@ label.field-label{display:block;font-size:.78rem;font-weight:600;color:var(--mut
     <button class="nav-item" onclick="showPage('drivers',this)"><span class="icon">👨‍✈️</span>Drivers</button>
     <button class="nav-item" onclick="showPage('owners',this)"><span class="icon">🏢</span>Car Owners</button>
     <button class="nav-item" onclick="showPage('customers',this)"><span class="icon">👥</span>Customers</button>
+    <button class="nav-item" onclick="showPage('payments',this)"><span class="icon">💳</span>Payment Verify<span class="badge" id="badge-payments" style="background:#ef4444">0</span></button>
     <button class="nav-item" onclick="showPage('terms',this)"><span class="icon">📄</span>Terms & Conditions</button>
     <button class="nav-item" onclick="showPage('settings',this)"><span class="icon">⚙️</span>Settings</button>
   </nav>
@@ -356,6 +357,23 @@ label.field-label{display:block;font-size:.78rem;font-weight:600;color:var(--mut
             <tbody id="customers-tbody"></tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <!-- PAYMENT VERIFY PAGE -->
+    <div class="page" id="page-payments" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+        <h2 style="font-size:1.3rem;font-weight:700;color:var(--navy)">💳 Payment Verifications</h2>
+        <button class="btn btn-gold btn-sm" onclick="loadPaymentVerifications()">🔄 Refresh</button>
+      </div>
+      <div class="page-tabs">
+        <button class="page-tab active" id="pvtab-pending" onclick="filterPayVerify('pending_review',this)">⏳ Pending</button>
+        <button class="page-tab" id="pvtab-verified" onclick="filterPayVerify('verified',this)">✅ Verified</button>
+        <button class="page-tab" id="pvtab-rejected" onclick="filterPayVerify('rejected',this)">❌ Rejected</button>
+        <button class="page-tab" id="pvtab-all" onclick="filterPayVerify('all',this)">All</button>
+      </div>
+      <div id="payment-verify-list">
+        <p style="color:var(--muted);text-align:center;padding:40px">Click Refresh to load</p>
       </div>
     </div>
 
@@ -1854,10 +1872,120 @@ function showPage(page, navEl) {
   const titles = {
     dashboard: 'Dashboard', bookings: 'Bookings', fleet: 'Fleet / Vehicles',
     'fare-rules': 'Fare Rules', drivers: 'Drivers', owners: 'Car Owners',
-    customers: 'Customers', terms: 'Terms & Conditions', settings: 'Settings'
+    customers: 'Customers', payments: 'Payment Verifications',
+    terms: 'Terms & Conditions', settings: 'Settings'
   };
+  // Auto-load payment verifications when page opened
+  if (page === 'payments') loadPaymentVerifications();
   document.getElementById('page-title').textContent = titles[page] || page;
   A.currentPage = page;
+}
+
+// ── PAYMENT VERIFICATIONS ─────────────────────────────────
+let allPayVerifications = [];
+let currentPayFilter = 'pending_review';
+
+async function loadPaymentVerifications() {
+  const sb = await authSb();
+  document.getElementById('payment-verify-list').innerHTML =
+    '<p style="color:var(--muted);text-align:center;padding:40px">Loading…</p>';
+  try {
+    const { data, error } = await sb.from('payment_verifications')
+      .select('*').order('created_at', { ascending: false }).limit(100);
+    if (error) throw error;
+    allPayVerifications = data || [];
+    // Update badge
+    const pendingCount = allPayVerifications.filter(v => v.status === 'pending_review').length;
+    const badge = document.getElementById('badge-payments');
+    if (badge) { badge.textContent = pendingCount; badge.style.display = pendingCount ? 'inline' : 'none'; }
+    renderPayVerifications(currentPayFilter);
+  } catch(e) {
+    document.getElementById('payment-verify-list').innerHTML =
+      `<div style="color:red;text-align:center;padding:40px">Error: ${e.message}<br><small>Make sure payment_verifications table exists in Supabase</small></div>`;
+  }
+}
+
+function filterPayVerify(filter, tabEl) {
+  currentPayFilter = filter;
+  document.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
+  if (tabEl) tabEl.classList.add('active');
+  renderPayVerifications(filter);
+}
+
+function renderPayVerifications(filter) {
+  const list = filter === 'all' ? allPayVerifications
+    : allPayVerifications.filter(v => v.status === filter);
+
+  if (!list.length) {
+    document.getElementById('payment-verify-list').innerHTML =
+      '<p style="color:var(--muted);text-align:center;padding:40px">No records found</p>';
+    return;
+  }
+
+  const cards = list.map(v => {
+    const statusColor = { pending_review: '#f59e0b', verified: '#10b981', rejected: '#ef4444' }[v.status] || '#888';
+    const statusLabel = { pending_review: '⏳ Pending', verified: '✅ Verified', rejected: '❌ Rejected' }[v.status] || v.status;
+    const ssHtml = v.screenshot_url
+      ? `<a href="${v.screenshot_url}" target="_blank" style="display:inline-block;margin-top:8px">
+           <img src="${v.screenshot_url}" style="max-width:180px;max-height:120px;border-radius:8px;border:2px solid #e8eaf0;object-fit:cover" alt="Screenshot">
+         </a>` : '';
+    const utrHtml = v.utr_number
+      ? `<div style="margin-top:6px"><code style="background:#f0f4ff;padding:4px 10px;border-radius:6px;font-size:.9rem;letter-spacing:1px">${v.utr_number}</code></div>` : '';
+    const actionHtml = v.status === 'pending_review' ? `
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-gold btn-sm" onclick="reviewPayment('${v.id}','verified','${v.booking_id}')">✅ Approve</button>
+        <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:none" onclick="reviewPayment('${v.id}','rejected','${v.booking_id}')">❌ Reject</button>
+      </div>` : '';
+    return `
+      <div style="background:#fff;border-radius:14px;padding:20px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-left:4px solid ${statusColor}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+          <div>
+            <span style="font-weight:700;color:#1e2a4a;font-size:1rem">${v.booking_number || 'N/A'}</span>
+            <span style="margin-left:10px;font-size:.78rem;padding:3px 10px;border-radius:20px;background:${statusColor}20;color:${statusColor};font-weight:600">${statusLabel}</span>
+          </div>
+          <div style="font-size:.82rem;color:#888">${new Date(v.created_at).toLocaleString('en-IN')}</div>
+        </div>
+        <div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;font-size:.85rem">
+          <div><span style="color:#888">Customer:</span> <strong>${v.customer_phone}</strong></div>
+          <div><span style="color:#888">Amount:</span> <strong style="color:#059669">₹${Number(v.amount).toLocaleString('en-IN')}</strong></div>
+          <div><span style="color:#888">Method:</span> <strong>${(v.payment_method||'').toUpperCase()}</strong></div>
+        </div>
+        ${utrHtml}${ssHtml}${actionHtml}
+      </div>`;
+  }).join('');
+
+  document.getElementById('payment-verify-list').innerHTML = cards;
+}
+
+async function reviewPayment(verifyId, newStatus, bookingId) {
+  if (!confirm(newStatus === 'verified' ? 'Approve this payment and confirm booking?' : 'Reject this payment?')) return;
+  const sb = await authSb();
+
+  // Update payment_verifications
+  await sb.from('payment_verifications').update({
+    status: newStatus,
+    reviewed_by: A.user?.email || 'admin',
+    reviewed_at: new Date().toISOString()
+  }).eq('id', verifyId);
+
+  // Update booking accordingly
+  if (newStatus === 'verified') {
+    await sb.from('bookings').update({
+      payment_status: 'paid',
+      booking_status: 'confirmed',
+      admin_notes: 'Payment manually verified by admin'
+    }).eq('id', bookingId);
+    showToast('✅ Payment approved — Booking confirmed', 'success');
+  } else {
+    await sb.from('bookings').update({
+      payment_status: 'pending',
+      booking_status: 'pending',
+      admin_notes: 'Payment rejected by admin'
+    }).eq('id', bookingId);
+    showToast('❌ Payment rejected', 'error');
+  }
+
+  await loadPaymentVerifications();
 }
 
 async function adminSignOut() {
